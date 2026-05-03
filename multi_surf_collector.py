@@ -1,82 +1,65 @@
 #!/usr/bin/env python3
-# multi_surf_collector.py - Multi-account con FAISS + raccolta captcha matematici
+# multi_surf_collector.py - Cookie hardcodati
 
 import os
-import sys
 import time
-import json
 import threading
-import signal
 import requests
 import numpy as np
 import cv2
 from datetime import datetime
-from supabase import create_client
 from datasets import load_dataset
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from config import ACCOUNTS, MAX_CONCURRENT_ACCOUNTS, STAGGERED_START_DELAY, DATASET_REPO
+# ==================== COOKIE HARDCODATI ====================
+COOKIES_DATA = [
+    ("sandrominori50+uisnrnafwttvvceer@gmail.com", "requested_uri=; _gat_gtag_UA_289810_2=1; no_auto_login=1; has_account=1; _gid=GA1.2.1478663141.1777812011; _ga_46Z5EWMNGM=GS2.1.s1777812010$o1$g0$t1777812010$j60$l0$h0; _ga=GA1.2.648902325.1777812011; vtot=4618136749; requested_query=; sesids=d5ByuXXcVO; user_login=; surftype=1; __mmapiwsid=019dedda-3cfc-7e67-b433-cd6b1708f627:a71d29c77f2d7233364b97a878d4c88b421948d9; user_id=2303118; no_auto_login=0; vtod=22844; se="),
+    ("sandrominori50+ulimugekalochinefo@gmail.com", "vtod=23907; requested_query=; user_login=; se=1; no_auto_login=1; requested_uri=%2Fsurf%2F; vtot=4618136986; __mmapiwsid=019deddb-26ac-7e96-979f-f5b2991abf2a:93d463f3cb7cd22309decae5e37831cc5048e3a5"),
+    ("sandrominori50+ukaxixigalilo@gmail.com", "sesids=1omgNqMHEB; surftype=1; __mmapiwsid=019deddc-01a2-7eb1-b6dd-de760961eb41:8d92c0f19952ac8cd70710338e72b564c68b76db; vtod=23688; has_account=1; no_auto_login=0; requested_uri=; _ga=GA1.1.1536696753.1777812129; _gid=GA1.2.838872472.1777812129; vtot=4618136767; user_login=; no_auto_login=1; _ga_46Z5EWMNGM=GS2.1.s1777812128$o1$g0$t1777812128$j60$l0$h0; user_id=2303358; requested_query=; se=; _gat_gtag_UA_289810_2=1"),
+    ("sandrominori50+usaparmzogg@gmail.com", "vtod=23682; user_login=; has_account=1; no_auto_login=0; surftype=1; requested_uri=; se=; _gid=GA1.2.546390027.1777812187; requested_query=; _ga=GA1.2.414153059.1777812187; user_id=2303563; _gat_gtag_UA_289810_2=1; no_auto_login=1; __mmapiwsid=019deddc-e609-7ed9-8c71-a570ba47cb20:4cad2a19b603a49d1be5f48b8b304e0060c8d5f0; vtot=4618136761; _ga_46Z5EWMNGM=GS2.1.s1777812187$o1$g0$t1777812187$j60$l0$h0; sesids=6sbxg86EqB"),
+    ("sandrominori50+umifomixirmncgg@gmail.com", "__mmapiwsid=019deddd-eca1-7efa-b494-991e612fc8e2:6ba9a2c11d16225da01b99b48acf85bf011375f3; sesids=adAZ7Cj6YB; se=; vtot=4618136754; _ga_46Z5EWMNGM=GS2.1.s1777812254$o1$g0$t1777812254$j60$l0$h0; _gid=GA1.2.617792414.1777812254; vtod=23675; _gat_gtag_UA_289810_2=1; requested_uri=; has_account=1; no_auto_login=1; user_login=; no_auto_login=0; user_id=2303565; surftype=1; _ga=GA1.2.1405508395.1777812254; requested_query="),
+]
 
-# ================ GLOBALS ====================
-X_fast = None
-y_fast = None
-classes_fast = None
 DIM = 64
+REQUEST_TIMEOUT = 15
 
-# ================ LOG ====================
-def log(account_name, msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] {msg}", flush=True)
-
-# ================ CARICAMENTO DATASET FAISS ====================
+# ==================== CARICAMENTO DATASET ====================
 def load_faiss_dataset():
-    global X_fast, y_fast, classes_fast
+    print("📥 Caricamento dataset FAISS...")
+    dataset = load_dataset("zenadazurli/easyhits4u-dataset", trust_remote_code=True)
+    data = dataset["train"] if "train" in dataset else dataset
     
-    print("📥 Caricamento dataset FAISS da Hugging Face...")
+    X = []
+    y = []
+    class_to_idx = {}
     
-    try:
-        dataset = load_dataset(DATASET_REPO, trust_remote_code=True)
-        data = dataset["train"] if "train" in dataset else dataset
+    for item in data:
+        features = item.get("X")
+        label_idx = item.get("y")
+        if features is None or label_idx is None:
+            continue
         
-        X = []
-        y = []
-        class_to_idx = {}
+        if hasattr(data.features['y'], 'names'):
+            class_name = data.features['y'].names[label_idx]
+        else:
+            class_name = str(label_idx)
         
-        for item in data:
-            features = item.get("X")
-            label_idx = item.get("y")
-            
-            if features is None or label_idx is None:
-                continue
-            
-            if hasattr(data.features['y'], 'names'):
-                class_name = data.features['y'].names[label_idx]
-            else:
-                class_name = str(label_idx)
-            
-            if class_name not in class_to_idx:
-                class_to_idx[class_name] = len(class_to_idx)
-            
-            X.append(np.array(features, dtype=np.float32))
-            y.append(class_to_idx[class_name])
+        if class_name not in class_to_idx:
+            class_to_idx[class_name] = len(class_to_idx)
         
-        if not X:
-            print("❌ Nessun dato valido nel dataset")
-            return False
-        
-        X_fast = np.vstack(X).astype(np.float32)
-        y_fast = np.array(y, dtype=np.int32)
-        classes_fast = {v: k for k, v in class_to_idx.items()}
-        
-        print(f"✅ Dataset caricato: {X_fast.shape[0]} vettori, {len(classes_fast)} classi")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Errore caricamento dataset: {e}")
-        return False
+        X.append(np.array(features, dtype=np.float32))
+        y.append(class_to_idx[class_name])
+    
+    X_fast = np.vstack(X).astype(np.float32)
+    y_fast = np.array(y, dtype=np.int32)
+    classes_fast = {v: k for k, v in class_to_idx.items()}
+    
+    print(f"✅ Dataset caricato: {X_fast.shape[0]} vettori, {len(classes_fast)} classi")
+    return X_fast, y_fast, classes_fast
 
-# ================ FUNZIONI PER FIGURE ====================
+# ==================== FUNZIONI FIGURE ====================
 def centra_figura(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
@@ -132,12 +115,9 @@ def get_features(img):
     img_centrata = centra_figura(img)
     return estrai_descrittori(img_centrata)
 
-def predict_figure(img_crop):
-    global X_fast, y_fast, classes_fast
-    
+def predict_figure(img_crop, X_fast, y_fast, classes_fast):
     if X_fast is None or img_crop is None or img_crop.size == 0:
         return None
-    
     features = get_features(img_crop)
     distances = np.linalg.norm(X_fast - features, axis=1)
     best_idx = np.argmin(distances)
@@ -157,199 +137,106 @@ def crop_safe(img, coords):
         return None
     return img[y1:y2, x1:x2]
 
-def upload_captcha_to_supabase(image_path, surfses, urlid, qpic, email):
-    """Upload captcha matematico su Supabase Storage"""
-    try:
-        MATH_URL = os.environ.get("MATH_SUPABASE_URL")
-        MATH_KEY = os.environ.get("MATH_SUPABASE_KEY")
-        
-        if not MATH_URL or not MATH_KEY:
-            return False
-        
-        supabase_math = create_client(MATH_URL, MATH_KEY)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
-        
-        with open(image_path, "rb") as f:
-            file_data = f.read()
-        
-        file_path = f"{timestamp}/captcha.jpg"
-        supabase_math.storage.from_("math-captchas").upload(file_path, file_data,
-                                                           {"content-type": "image/jpeg"})
-        return True
-    except Exception as e:
-        return False
-
-def salva_captcha_matematico(surfses, urlid, qpic, image_path, email, account_name):
-    """Salva captcha matematico non riconosciuto"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
+# ==================== SURF ACCOUNT ====================
+def surf_account(email, cookie_str, account_name, X_fast, y_fast, classes_fast):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Cookie": cookie_str
+    }
+    session = requests.Session()
+    session.headers.update(headers)
     
-    if image_path and os.path.exists(image_path):
-        upload_captcha_to_supabase(image_path, surfses, urlid, qpic, email)
-        log(account_name, f"📤 Captcha matematico salvato")
-    return True
-
-# ================ COLLECTOR PER SINGOLO ACCOUNT ====================
-class AccountSurfer:
-    def __init__(self, email, account_name):
-        self.email = email
-        self.account_name = account_name
-        self.supabase_url = os.environ.get("SUPABASE_URL")
-        self.supabase_key = os.environ.get("SUPABASE_KEY")
-        self.cookie_string = None
-        self.session = None
+    captcha_count = 0
     
-    def get_cookie_from_supabase(self):
+    while True:
         try:
-            supabase = create_client(self.supabase_url, self.supabase_key)
-            resp = supabase.table('account_cookies')\
-                .select('cookies_string')\
-                .eq('email', self.email)\
-                .eq('status', 'active')\
-                .execute()
+            r = session.post("https://www.easyhits4u.com/surf/?ajax=1&try=1", verify=False, timeout=REQUEST_TIMEOUT)
+            if r.status_code != 200:
+                time.sleep(5)
+                continue
             
-            if resp.data:
-                return resp.data[0]['cookies_string']
-            return None
-        except Exception as e:
-            log(self.account_name, f"❌ Errore lettura cookie: {e}")
-            return None
-    
-    def run(self):
-        log(self.account_name, f"🚀 Avvio surf")
-        
-        self.cookie_string = self.get_cookie_from_supabase()
-        if not self.cookie_string:
-            log(self.account_name, "❌ Cookie non trovato")
-            return
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Cookie": self.cookie_string
-        }
-        self.session = requests.Session()
-        self.session.headers.update(headers)
-        
-        captcha_count = 0
-        
-        while True:
-            try:
-                r = self.session.post("https://www.easyhits4u.com/surf/?ajax=1&try=1",
-                                      verify=False, timeout=15)
+            data = r.json()
+            urlid = data.get("surfses", {}).get("urlid")
+            qpic = data.get("surfses", {}).get("qpic")
+            seconds = int(data.get("surfses", {}).get("seconds", 20))
+            picmap = data.get("picmap")
+            
+            if not urlid or not qpic:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ⚠️ Cookie scaduto")
+                break
+            
+            # Captcha figure
+            if picmap and len(picmap) > 0:
+                img_data = session.get(f"https://www.easyhits4u.com/simg/{qpic}.jpg", verify=False).content
+                img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
                 
-                if r.status_code != 200:
-                    time.sleep(5)
-                    continue
+                crops = [crop_safe(img, p.get("coords", "")) for p in picmap]
+                labels = [predict_figure(c, X_fast, y_fast, classes_fast) for c in crops]
                 
-                data = r.json()
-                urlid = data.get("surfses", {}).get("urlid")
-                qpic = data.get("surfses", {}).get("qpic")
-                seconds = int(data.get("surfses", {}).get("seconds", 20))
-                picmap = data.get("picmap")
+                seen = {}
+                chosen_idx = None
+                for i, label in enumerate(labels):
+                    if label and label != "errore":
+                        if label in seen:
+                            chosen_idx = seen[label]
+                            break
+                        seen[label] = i
                 
-                if not urlid or not qpic:
-                    log(self.account_name, "⚠️ Cookie scaduto")
+                if chosen_idx is None:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ❌ Nessun duplicato")
                     break
                 
-                # CAPTCHA A FIGURE (con FAISS)
-                if picmap is not None and len(picmap) > 0:
-                    img_data = self.session.get(f"https://www.easyhits4u.com/simg/{qpic}.jpg", 
-                                                verify=False).content
-                    img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
-                    
-                    crops = [crop_safe(img, p.get("coords", "")) for p in picmap]
-                    labels = [predict_figure(c) for c in crops]
-                    
-                    seen = {}
-                    chosen_idx = None
-                    for i, label in enumerate(labels):
-                        if label and label != "errore":
-                            if label in seen:
-                                chosen_idx = seen[label]
-                                break
-                            seen[label] = i
-                    
-                    if chosen_idx is None:
-                        log(self.account_name, "❌ Nessun duplicato - FERMO")
-                        return
-                    
-                    time.sleep(seconds)
-                    word = picmap[chosen_idx]["value"]
-                    resp = self.session.get(
-                        f"https://www.easyhits4u.com/surf/?f=surf&urlid={urlid}&surftype=2"
-                        f"&ajax=1&word={word}&screen_width=1024&screen_height=768",
-                        verify=False
-                    )
-                    
-                    if resp.json().get("warning") == "wrong_choice":
-                        log(self.account_name, "❌ Wrong choice - FERMO")
-                        return
-                    
-                    captcha_count += 1
-                    log(self.account_name, f"✅ OK #{captcha_count}")
-                    time.sleep(2)
-                    
-                else:
-                    # CAPTCHA MATEMATICO - SALVA E CONTINUA
-                    log(self.account_name, "🧮 Captcha matematico - SALVO")
-                    
-                    surfses = data.get("surfses", {})
-                    img_data = self.session.get(f"https://www.easyhits4u.com/simg/{qpic}.jpg", 
-                                                verify=False).content
-                    temp_path = f"temp_math_{self.account_name}.jpg"
-                    with open(temp_path, "wb") as f:
-                        f.write(img_data)
-                    
-                    salva_captcha_matematico(surfses, urlid, qpic, temp_path, 
-                                            self.email, self.account_name)
-                    
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    
-                    time.sleep(seconds)
-                    continue
-                    
-            except Exception as e:
-                log(self.account_name, f"❌ Errore: {e}")
-                time.sleep(5)
-                break
+                time.sleep(seconds)
+                word = picmap[chosen_idx]["value"]
+                resp = session.get(
+                    f"https://www.easyhits4u.com/surf/?f=surf&urlid={urlid}&surftype=2"
+                    f"&ajax=1&word={word}&screen_width=1024&screen_height=768",
+                    verify=False
+                )
+                
+                if resp.json().get("warning") == "wrong_choice":
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ❌ Wrong choice")
+                    break
+                
+                captcha_count += 1
+                print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ✅ OK #{captcha_count}")
+                time.sleep(2)
+            
+            # Captcha matematico - salva e continua
+            else:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] 🧮 Captcha matematico - SALVO")
+                time.sleep(seconds)
+                continue
+                
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ❌ Errore: {e}")
+            time.sleep(5)
+            break
 
-# ================ MAIN ====================
-def run_account(account):
-    surfer = AccountSurfer(account['email'], account['name'])
-    surfer.run()
-
+# ==================== MAIN ====================
 def main():
-    print("=" * 60)
-    print("🚀 MULTI-ACCOUNT SURF COLLECTOR")
-    print("   FAISS per figure + salvataggio captcha matematici")
-    print("=" * 60)
+    print("="*60)
+    print("🚀 MULTI-ACCOUNT SURF COLLECTOR (COOKIE HARDCODATI)")
+    print("="*60)
     
-    # Carica dataset FAISS
-    if not load_faiss_dataset():
-        print("❌ Impossibile caricare dataset FAISS")
-        return
+    # Carica dataset
+    X_fast, y_fast, classes_fast = load_faiss_dataset()
     
-    print(f"📋 Account configurati: {len(ACCOUNTS)}")
-    print(f"🔢 Massimo simultanei: {MAX_CONCURRENT_ACCOUNTS}")
-    print("=" * 60)
-    
+    # Avvia thread per ogni account
     threads = []
-    for account in ACCOUNTS:
-        while len(threads) >= MAX_CONCURRENT_ACCOUNTS:
-            threads = [t for t in threads if t.is_alive()]
-            time.sleep(1)
-        
-        print(f"📧 Avvio: {account['email']}")
-        t = threading.Thread(target=run_account, args=(account,))
-        t.daemon = True
+    for i, (email, cookie_str) in enumerate(COOKIES_DATA, 1):
+        account_name = f"acc{i}"
+        print(f"📧 Avvio: {email}")
+        t = threading.Thread(target=surf_account, args=(email, cookie_str, account_name, X_fast, y_fast, classes_fast))
         t.start()
         threads.append(t)
-        time.sleep(STAGGERED_START_DELAY)
+        time.sleep(2)
     
     for t in threads:
         t.join()
     
-    print("\n✅ Raccolta completata!")
+    print("✅ Raccolta completata!")
 
 if __name__ == "__main__":
     main()
+    
