@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# multi_surf_collector.py - Cookie hardcodati
+# multi_surf_collector.py - Legge i cookie da Supabase
 
 import os
 import time
@@ -8,20 +8,35 @@ import requests
 import numpy as np
 import cv2
 from datetime import datetime
+from supabase import create_client
 from datasets import load_dataset
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ==================== COOKIE HARDCODATI ====================
-COOKIES_DATA = [
-    ("sandrominori50+uisnrnafwttvvceer@gmail.com", "requested_uri=; _gat_gtag_UA_289810_2=1; no_auto_login=1; has_account=1; _gid=GA1.2.1478663141.1777812011; _ga_46Z5EWMNGM=GS2.1.s1777812010$o1$g0$t1777812010$j60$l0$h0; _ga=GA1.2.648902325.1777812011; vtot=4618136749; requested_query=; sesids=d5ByuXXcVO; user_login=; surftype=1; __mmapiwsid=019dedda-3cfc-7e67-b433-cd6b1708f627:a71d29c77f2d7233364b97a878d4c88b421948d9; user_id=2303118; no_auto_login=0; vtod=22844; se="),
-    ("sandrominori50+ulimugekalochinefo@gmail.com", "vtod=23907; requested_query=; user_login=; se=1; no_auto_login=1; requested_uri=%2Fsurf%2F; vtot=4618136986; __mmapiwsid=019deddb-26ac-7e96-979f-f5b2991abf2a:93d463f3cb7cd22309decae5e37831cc5048e3a5"),
-    ("sandrominori50+ukaxixigalilo@gmail.com", "sesids=1omgNqMHEB; surftype=1; __mmapiwsid=019deddc-01a2-7eb1-b6dd-de760961eb41:8d92c0f19952ac8cd70710338e72b564c68b76db; vtod=23688; has_account=1; no_auto_login=0; requested_uri=; _ga=GA1.1.1536696753.1777812129; _gid=GA1.2.838872472.1777812129; vtot=4618136767; user_login=; no_auto_login=1; _ga_46Z5EWMNGM=GS2.1.s1777812128$o1$g0$t1777812128$j60$l0$h0; user_id=2303358; requested_query=; se=; _gat_gtag_UA_289810_2=1"),
-    ("sandrominori50+usaparmzogg@gmail.com", "vtod=23682; user_login=; has_account=1; no_auto_login=0; surftype=1; requested_uri=; se=; _gid=GA1.2.546390027.1777812187; requested_query=; _ga=GA1.2.414153059.1777812187; user_id=2303563; _gat_gtag_UA_289810_2=1; no_auto_login=1; __mmapiwsid=019deddc-e609-7ed9-8c71-a570ba47cb20:4cad2a19b603a49d1be5f48b8b304e0060c8d5f0; vtot=4618136761; _ga_46Z5EWMNGM=GS2.1.s1777812187$o1$g0$t1777812187$j60$l0$h0; sesids=6sbxg86EqB"),
-    ("sandrominori50+umifomixirmncgg@gmail.com", "__mmapiwsid=019deddd-eca1-7efa-b494-991e612fc8e2:6ba9a2c11d16225da01b99b48acf85bf011375f3; sesids=adAZ7Cj6YB; se=; vtot=4618136754; _ga_46Z5EWMNGM=GS2.1.s1777812254$o1$g0$t1777812254$j60$l0$h0; _gid=GA1.2.617792414.1777812254; vtod=23675; _gat_gtag_UA_289810_2=1; requested_uri=; has_account=1; no_auto_login=1; user_login=; no_auto_login=0; user_id=2303565; surftype=1; _ga=GA1.2.1405508395.1777812254; requested_query="),
+# ==================== CONFIG ====================
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+# Account da usare (solo email, le password non servono)
+ACCOUNTS = [
+    {'email': 'dangiopiera+filippomesherda@gmail.com', 'name': 'acc1'},
+    {'email': 'piersilviogarrini+linadarini@gmail.com', 'name': 'acc2'},
+    {'email': 'sandrominori50+ucecelu@gmail.com', 'name': 'acc3'},
+    {'email': 'sandrominori50+ulonomizano@gmail.com', 'name': 'acc4'},
+    {'email': 'sandrominori50+uzakabechi@gmail.com', 'name': 'acc5'},
+    {'email': 'sandrominori50+uisnrnafwttvvceer@gmail.com', 'name': 'acc6'},
+    {'email': 'sandrominori50+ulimugekalochinefo@gmail.com', 'name': 'acc7'},
+    {'email': 'sandrominori50+ukaxixigalilo@gmail.com', 'name': 'acc8'},
+    {'email': 'sandrominori50+usaparmzogg@gmail.com', 'name': 'acc9'},
+    {'email': 'sandrominori50+umifomixirmncgg@gmail.com', 'name': 'acc10'},
+    {'email': 'sandrominori50+ukukamulurmgaka@gmail.com', 'name': 'acc11'},
+    {'email': 'sandrominori50+udizageku@gmail.com', 'name': 'acc12'},
+    {'email': 'sandrominori50+uzalifolusageneka@gmail.com', 'name': 'acc13'},
+    {'email': 'sandrominori50+ulugarecexisa@gmail.com', 'name': 'acc14'},
 ]
 
+MAX_CONCURRENT = 5
 DIM = 64
 REQUEST_TIMEOUT = 15
 
@@ -58,6 +73,23 @@ def load_faiss_dataset():
     
     print(f"✅ Dataset caricato: {X_fast.shape[0]} vettori, {len(classes_fast)} classi")
     return X_fast, y_fast, classes_fast
+
+# ==================== LEGGI COOKIE DA SUPABASE ====================
+def get_cookie_from_supabase(email):
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        resp = supabase.table('account_cookies')\
+            .select('cookies_string')\
+            .eq('email', email)\
+            .eq('status', 'active')\
+            .execute()
+        
+        if resp.data:
+            return resp.data[0]['cookies_string']
+        return None
+    except Exception as e:
+        print(f"❌ Errore lettura cookie: {e}")
+        return None
 
 # ==================== FUNZIONI FIGURE ====================
 def centra_figura(image):
@@ -138,7 +170,19 @@ def crop_safe(img, coords):
     return img[y1:y2, x1:x2]
 
 # ==================== SURF ACCOUNT ====================
-def surf_account(email, cookie_str, account_name, X_fast, y_fast, classes_fast):
+def surf_account(account, X_fast, y_fast, classes_fast):
+    email = account['email']
+    account_name = account['name']
+    
+    print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] 🚀 Avvio surf")
+    
+    # Leggi cookie da Supabase
+    cookie_str = get_cookie_from_supabase(email)
+    
+    if not cookie_str:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] ❌ Cookie non trovato")
+        return
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Cookie": cookie_str
@@ -205,6 +249,7 @@ def surf_account(email, cookie_str, account_name, X_fast, y_fast, classes_fast):
             # Captcha matematico - salva e continua
             else:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}][{account_name}] 🧮 Captcha matematico - SALVO")
+                # Qui va la logica di salvataggio su Supabase Storage
                 time.sleep(seconds)
                 continue
                 
@@ -216,18 +261,21 @@ def surf_account(email, cookie_str, account_name, X_fast, y_fast, classes_fast):
 # ==================== MAIN ====================
 def main():
     print("="*60)
-    print("🚀 MULTI-ACCOUNT SURF COLLECTOR (COOKIE HARDCODATI)")
+    print("🚀 MULTI-ACCOUNT SURF COLLECTOR (Supabase)")
     print("="*60)
     
-    # Carica dataset
+    # Carica dataset FAISS
     X_fast, y_fast, classes_fast = load_faiss_dataset()
     
-    # Avvia thread per ogni account
+    # Avvia thread (max 5 alla volta)
     threads = []
-    for i, (email, cookie_str) in enumerate(COOKIES_DATA, 1):
-        account_name = f"acc{i}"
-        print(f"📧 Avvio: {email}")
-        t = threading.Thread(target=surf_account, args=(email, cookie_str, account_name, X_fast, y_fast, classes_fast))
+    for account in ACCOUNTS:
+        while len(threads) >= MAX_CONCURRENT:
+            threads = [t for t in threads if t.is_alive()]
+            time.sleep(1)
+        
+        print(f"📧 Avvio: {account['email']}")
+        t = threading.Thread(target=surf_account, args=(account, X_fast, y_fast, classes_fast))
         t.start()
         threads.append(t)
         time.sleep(2)
